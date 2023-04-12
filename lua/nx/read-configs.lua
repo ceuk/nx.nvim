@@ -36,9 +36,23 @@ _M.read_nx = function()
 	_G.nx.nx = _M.rf './nx.json'
 end
 
+---Reads nx graph and stores as a global var
+_M.read_graph = function()
+	local s = _G.nx.nx_cmd_root .. ' graph --file /tmp/nx-graph.json'
+	vim.fn.system(s)
+	_G.nx.graph = vim.v.shell_error == 0 and _M.rf('/tmp/nx-graph.json').graph
+		or nil
+end
+
 ---Reads workspace.json and sets its global var
 _M.read_workspace = function()
-	_G.nx.workspace = _M.rf './workspace.json'
+	local s = _G.nx.nx_cmd_root .. ' print-affected --all'
+	local r = vim.fn.system(s)
+	_G.nx.workspace = nil
+	if vim.v.shell_error == 0 then
+		_M.read_graph()
+		_G.nx.workspace = vim.json.decode(r)
+	end
 end
 
 ---Reads package.json and sets its global var
@@ -49,9 +63,9 @@ end
 ---Reads all projects configurations
 _M.read_projects = function()
 	for key, value in pairs(_G.nx.workspace.projects or {}) do
-		local v = _M.rf(value .. '/project.json')
+		local v = _G.nx.graph.nodes[value].data
 
-		_G.nx.projects[key] = v
+		_G.nx.projects[value] = v
 	end
 end
 
@@ -89,15 +103,13 @@ _M.read_external_generators = function()
 	for _, value in ipairs(deps) do
 		local f = _M.rf('./node_modules/' .. value .. '/package.json')
 		if f ~= nil and f.schematics ~= nil then
-			local schematics = _M.rf(
-				'./node_modules/' .. value .. '/' .. f.schematics
-			)
+			local schematics =
+				_M.rf('./node_modules/' .. value .. '/' .. f.schematics)
 
 			if schematics and schematics.generators then
 				for name, gen in pairs(schematics.generators) do
-					local schema = _M.rf(
-						'./node_modules/' .. value .. '/' .. gen.schema
-					)
+					local schema =
+						_M.rf('./node_modules/' .. value .. '/' .. gen.schema)
 					if schema then
 						table.insert(gens, {
 							schema = schema,
@@ -120,7 +132,7 @@ _M.read_nx_root = function()
 	_M.read_workspace()
 	_M.read_package_json()
 
-	if _G.nx.workspace ~= nil then
+	if _G.nx.workspace ~= nil and _G.nx.graph ~= nil then
 		_M.read_projects()
 	end
 
